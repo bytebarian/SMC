@@ -24,6 +24,9 @@ public static class InjectionHelper
     }
 
     #region P/Invoke
+    [DllImport("kernel32.dll")]
+    static extern uint GetLastError();
+
     [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true, CharSet = CharSet.Unicode)]
     private static extern IntPtr LoadLibraryW(string lpFileName);
 
@@ -63,8 +66,12 @@ public static class InjectionHelper
 
         _moduleHandle = LoadLibraryW(path);
         if (_moduleHandle == IntPtr.Zero)
-            throw new FileNotFoundException( string.Format( "Failed to load [{0}]", path) );
-
+        {
+            var err = GetLastError();
+            Console.WriteLine(err);
+            throw new FileNotFoundException(string.Format("Failed to load [{0}]", path));
+        }
+            
         IntPtr ptr = GetProcAddress(_moduleHandle, "UpdateILCodes");
         if (ptr == IntPtr.Zero)
             throw new MethodAccessException("Failed to locate UpdateILCodes function!");
