@@ -1,5 +1,8 @@
-﻿using System;
+﻿using Microsoft.CSharp;
+using System;
+using System.CodeDom.Compiler;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
@@ -16,9 +19,85 @@ namespace Test
         [STAThread]
         static void Main()
         {
-            var test = new Test();
-            test.Run();
+            //var test = new Test();
+            //test.Run();
+
+            var hotfix = new Hotfix();
+            hotfix.Run();
             
+        }
+    }
+
+    public class Hotfix
+    {
+        DateTime? lastModify = null;
+        Bug bug = new Bug();
+
+        public void Run()
+        {
+            Injector injector = new Injector();
+            injector.CILInjectionInit();
+            Console.Clear();
+            Console.ReadKey();
+
+            var timer = new System.Threading.Timer((e) =>
+            {
+                Check();
+            }, null, TimeSpan.Zero, TimeSpan.FromSeconds(10));
+
+            var timer1 = new System.Threading.Timer((e) =>
+            {
+                try
+                {
+                    bug.DoWork();
+                }
+                catch
+                {
+                    Console.WriteLine("Ooops something went wrong");
+                }
+
+            }, null, TimeSpan.Zero, TimeSpan.FromSeconds(5));
+
+            Console.ReadKey();
+        }
+
+        public void Check()
+        { 
+            if(lastModify == null)
+            {
+                lastModify = File.GetLastWriteTimeUtc(@"C:\Projects\Github\SMC\SMC\Demo\DotNet35_x64\Bug.cs");
+            }
+            else
+            {
+                var newlmd = File.GetLastWriteTimeUtc(@"C:\Projects\Github\SMC\SMC\Demo\DotNet35_x64\Bug.cs");
+                Console.WriteLine(string.Format("old value {0} new value {1}", lastModify, newlmd));
+                if (newlmd > lastModify)
+                {
+                    Console.WriteLine("podmianka");
+                    var content = File.ReadAllText(@"C:\Projects\Github\SMC\SMC\Demo\DotNet35_x64\Bug.cs");
+                    InjectCode(content, "Test.Bug", "DoWork", BindingFlags.Public | BindingFlags.Instance);
+                    lastModify = newlmd;
+                }
+            }
+        }
+
+        public void InjectCode(string code, string typeName, string methodName, BindingFlags flags)
+        {
+            // Compile code  
+            CSharpCodeProvider cProv = new CSharpCodeProvider();
+            CompilerParameters cParams = new CompilerParameters();
+            cParams.ReferencedAssemblies.Add("mscorlib.dll");
+            cParams.ReferencedAssemblies.Add("System.dll");
+            cParams.GenerateExecutable = false;
+            cParams.GenerateInMemory = true;
+
+            CompilerResults cResults = cProv.CompileAssemblyFromSource(cParams, code);
+            var obj = cResults.CompiledAssembly.CreateInstance(typeName);
+            var t = obj.GetType();
+            var methodInfo = t.GetMethod(methodName, flags);
+
+            var ilCode = methodInfo.GetMethodBody().GetILAsByteArray();
+            InjectionHelper.UpdateILCodes(methodInfo, ilCode);
         }
     }
 
@@ -28,35 +107,43 @@ namespace Test
         {
             int a = 1;
             int b = 2;
+            Console.WriteLine(string.Format("Porównywanie liczb {0} i {1}", a, b));
             if (a < b)
             {
-                Console.WriteLine("Number 1 is less than 2");
+                System.Diagnostics.Debugger.Break();
+                Console.WriteLine(string.Format("liczba {0} jest mniejsza od {1}", a, b));
             }
             else
             {
-                Console.WriteLine("Number 1 is greater than 2 (O_o)");
+                System.Diagnostics.Debugger.Break();
+                Console.WriteLine(string.Format("liczba {0} jest większa lub równa {1}", a, b));
             }
         }
 
         public void Run()
         {
+            #region Init
             //CILInjectionInit();
             Injector injector = new Injector();
             injector.CILInjectionInit();
-
+            Console.Clear();
             Console.ReadKey();
 
-            Type type = this.GetType();
-            MethodInfo methodInfo = type.GetMethod("CompareOneAndTwo", BindingFlags.Public | BindingFlags.Instance);
+            //Type type = this.GetType();
+            //MethodInfo methodInfo = type.GetMethod("CompareOneAndTwo", BindingFlags.Public | BindingFlags.Instance);
 
-            var ilCodes = GetUpdatedILCode(methodInfo);
-            InjectionHelper.UpdateILCodes(methodInfo, ilCodes);
-            //Inject();
+            //var ilCodes = GetUpdatedILCode(methodInfo);
+            //InjectionHelper.UpdateILCodes(methodInfo, ilCodes);
+            Inject();
+
+            #endregion
 
             CompareOneAndTwo();
 
             Console.ReadKey();
         }
+
+        #region Init_methods
 
         public byte[] GetUpdatedILCode(MethodInfo methodInfo)
         {
@@ -119,6 +206,8 @@ namespace Test
                 Console.WriteLine(string.Format(@"Initialization is failed with error [{0}]!", status.ToString()));
             }
         }
+
+        #endregion 
     }
 
     public class Injector
